@@ -623,3 +623,4 @@ export const useSessionStore = defineStore('session', () => {
 })
 
 export { previewValue }
+export type { FilterMode }
