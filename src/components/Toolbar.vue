@@ -12,6 +12,7 @@ import {
   X,
   Loader2,
   ClipboardPaste,
+  RotateCcw,
 } from 'lucide-vue-next'
 import { useSessionStore } from '../store/session'
 
@@ -201,6 +202,9 @@ async function onCopySource(slot: 0 | 1) {
       </button>
       <button class="icon-btn" :disabled="!store.ready" title="Copier le JSON final" @click="onCopy">
         <Copy class="h-4 w-4" />
+      </button>
+      <button class="icon-btn" :disabled="!store.hasAnySource" title="Réinitialiser" @click="store.reset()">
+        <RotateCcw class="h-4 w-4" />
       </button>
     </div>
 

@@ -200,6 +200,13 @@ export const useSessionStore = defineStore('session', () => {
     void reinitialize()
   }
 
+  function reset() {
+    sources.value = []
+    filter.value = 'all'
+    search.value = ''
+    void reinitialize()
+  }
+
   // ---- (Re)compute diff and final state ----
   async function reinitialize() {
     const A = sources.value[0]?.normalized ?? null
@@ -591,6 +598,7 @@ export const useSessionStore = defineStore('session', () => {
     loadSource,
     loadSample,
     clearSource,
+    reset,
     reinitialize,
     recomputeDiff,
     refreshMaps,
