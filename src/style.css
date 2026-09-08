@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-100 text-zinc-900 antialiased;
+}
+
+/* Monaco pane backgrounds */
+.monaco-editor,
+.monaco-editor .margin,
+.monaco-editor-background {
+  background-color: #ffffff !important;
+}
+
+/* Diff line decorations (Git-diff palette) */
+.diff-line-added {
+  background: rgba(16, 185, 129, 0.16);
+}
+.diff-line-removed {
+  background: rgba(239, 68, 68, 0.16);
+}
+.diff-line-changed {
+  background: rgba(245, 158, 11, 0.16);
+}
+.diff-line-active {
+  background: rgba(59, 130, 246, 0.2);
+}
+.diff-line-resolved {
+  background: rgba(16, 185, 129, 0.09);
+}
+
+/* Thin scrollbars for panels */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 4px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
