@@ -17,6 +17,7 @@ import {
   collectKeyPaths,
   filterTree,
   previewValue,
+  stringifyAligned,
 } from '../lib/engine'
 import { normalizeJson, computeDiff } from '../lib/engineClient'
 import { saveSession, loadSession } from '../lib/db'
@@ -235,6 +236,17 @@ export const useSessionStore = defineStore('session', () => {
   function refreshMaps() {
     const A = sources.value[0]?.normalized
     const B = sources.value[1]?.normalized
+    if (A != null && B != null && final.value != null) {
+      const r = stringifyAligned(A, B, final.value, indent.value)
+      aText.value = r.a.text
+      aMap.value = r.a.lines
+      bText.value = r.b.text
+      bMap.value = r.b.lines
+      finalText.value = r.f.text
+      finalMap.value = r.f.lines
+      finalValid.value = true
+      return
+    }
     if (A != null) {
       const s = stringifyWithIndex(A, indent.value)
       aText.value = s.text

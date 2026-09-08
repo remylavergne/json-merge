@@ -355,3 +355,184 @@ export function previewValue(v: JsonValue | undefined): string {
   const s = JSON.stringify(v)
   return s.length > 48 ? s.slice(0, 48) + '…' : s
 }
+
+export interface AlignedDoc {
+  text: string
+  lines: Map<string, number> // pathKey -> 1-based line in the aligned text
+}
+
+/** Render three sorted JSON documents (A, B, merged Final) as equal-height,
+ *  line-aligned texts. Blank lines pad the shorter sides at every point where
+ *  one document is missing a key or has a shorter value — VS Code diff style.
+ *  The result stays valid JSON (blank lines are whitespace), so the editable
+ *  Final pane can be re-parsed unchanged. */
+export function stringifyAligned(
+  a: JsonValue,
+  b: JsonValue,
+  f: JsonValue,
+  indentSpaces = 2,
+): { a: AlignedDoc; b: AlignedDoc; f: AlignedDoc } {
+  const pad = ' '.repeat(indentSpaces)
+
+  // Render one value with an optional key prefix ("\"k\": ") into lines,
+  // recording the 1-based line of every key path within it.
+  function renderMember(
+    v: JsonValue,
+    keyLabel: string | null,
+    path: JsonPath,
+    level: number,
+  ): { lines: string[]; keys: Map<string, number> } {
+    const lines: string[] = []
+    const keys = new Map<string, number>()
+    const ind = pad.repeat(level)
+    const prefix = keyLabel === null ? ind : ind + keyLabel
+    keys.set(pathKey(path), 1)
+
+    if (v === null || typeof v !== 'object') {
+      lines.push(prefix + JSON.stringify(v))
+      return { lines, keys }
+    }
+    if (Array.isArray(v)) {
+      if (v.length === 0) {
+        lines.push(prefix + '[]')
+        return { lines, keys }
+      }
+      lines.push(prefix + '[')
+      v.forEach((item, i) => {
+        const cp = [...path, i]
+        const child = renderMember(item, null, cp, level + 1)
+        const base = lines.length
+        for (const l of child.lines) lines.push(l)
+        for (const [k, rel] of child.keys) keys.set(k, base + rel)
+        if (i < v.length - 1) lines[lines.length - 1] += ','
+      })
+      lines.push(pad.repeat(level) + ']')
+      return { lines, keys }
+    }
+    const ks = Object.keys(v)
+    if (ks.length === 0) {
+      lines.push(prefix + '{}')
+      return { lines, keys }
+    }
+    lines.push(prefix + '{')
+    ks.forEach((k, idx) => {
+      const cp = [...path, k]
+      const child = renderMember(v[k], JSON.stringify(k) + ': ', cp, level + 1)
+      const base = lines.length
+      for (const l of child.lines) lines.push(l)
+      for (const [kk, rel] of child.keys) keys.set(kk, base + rel)
+      if (idx < ks.length - 1) lines[lines.length - 1] += ','
+    })
+    lines.push(pad.repeat(level) + '}')
+    return { lines, keys }
+  }
+
+  function appendComma(arr: string[]): void {
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (arr[i] !== '') {
+        arr[i] += ','
+        return
+      }
+    }
+  }
+
+  function unionChildren(va: JsonValue | undefined, vb: JsonValue | undefined, vf: JsonValue | undefined, isArr: boolean): Array<string | number> {
+    if (isArr) {
+      let max = 0
+      for (const v of [va, vb, vf]) if (Array.isArray(v)) max = Math.max(max, v.length)
+      const out: number[] = []
+      for (let i = 0; i < max; i++) out.push(i)
+      return out
+    }
+    const s = new Set<string>()
+    for (const v of [va, vb, vf]) if (v !== undefined && v !== null && !Array.isArray(v)) for (const k of Object.keys(v)) s.add(k)
+    return [...s].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0))
+  }
+
+  // Align three values (each possibly undefined = absent) at a path.
+  function renderNode(
+    va: JsonValue | undefined,
+    vb: JsonValue | undefined,
+    vf: JsonValue | undefined,
+    path: JsonPath,
+    level: number,
+    keyLabel: string | null,
+  ): { lines: string[][]; keys: Array<Map<string, number>> } {
+    const vals = [va, vb, vf]
+    const kinds = vals.map((v) =>
+      v === undefined ? 'absent' : Array.isArray(v) ? 'array' : isPlainObject(v) ? 'object' : 'scalar',
+    )
+    const compositeKinds = kinds.filter((k) => k === 'object' || k === 'array')
+    const allSameComposite =
+      compositeKinds.length > 0 &&
+      compositeKinds.every((k) => k === compositeKinds[0]) &&
+      kinds.every((k) => k === 'absent' || k === compositeKinds[0])
+
+    // Mixed types (e.g. scalar vs object) or all scalars: render each present
+    // value wholesale and pad to the tallest.
+    if (!allSameComposite) {
+      const rendered = vals.map((v, pi) =>
+        v === undefined ? { lines: [] as string[], keys: new Map<string, number>() } : renderMember(v, keyLabel, path, level),
+      )
+      const max = Math.max(0, ...rendered.map((r) => r.lines.length))
+      const lines: string[][] = [[], [], []]
+      const keys: Array<Map<string, number>> = [new Map(), new Map(), new Map()]
+      for (let pi = 0; pi < 3; pi++) {
+        for (let i = 0; i < max; i++) lines[pi].push(i < rendered[pi].lines.length ? rendered[pi].lines[i] : '')
+        for (const [k, rel] of rendered[pi].keys) keys[pi].set(k, rel)
+      }
+      return { lines, keys }
+    }
+
+    // Same composite type in every present pane: interleave children.
+    const isArr = compositeKinds[0] === 'array'
+    const ind = pad.repeat(level)
+    const prefix = keyLabel === null ? ind : ind + keyLabel
+    const lines: string[][] = [[], [], []]
+    const keys: Array<Map<string, number>> = [new Map(), new Map(), new Map()]
+
+    for (let pi = 0; pi < 3; pi++) {
+      lines[pi].push(kinds[pi] === 'absent' ? '' : prefix + (isArr ? '[' : '{'))
+      if (kinds[pi] !== 'absent') keys[pi].set(pathKey(path), 1)
+    }
+
+    const childKeys = unionChildren(va, vb, vf, isArr)
+    const presentChild: Array<Set<string | number>> = [new Set(), new Set(), new Set()]
+    for (const ck of childKeys) {
+      for (let pi = 0; pi < 3; pi++) {
+        const v = vals[pi]
+        if (v === undefined) continue
+        if (isArr ? (ck as number) < (v as unknown[]).length : (ck as string) in (v as object)) presentChild[pi].add(ck)
+      }
+    }
+
+    for (let j = 0; j < childKeys.length; j++) {
+      const ck = childKeys[j]
+      const cva = va === undefined ? undefined : (va as JsonObject)[ck as string]
+      const cvb = vb === undefined ? undefined : (vb as JsonObject)[ck as string]
+      const cvf = vf === undefined ? undefined : (vf as JsonObject)[ck as string]
+      const childLabel = isArr ? null : JSON.stringify(ck) + ': '
+      const child = renderNode(cva, cvb, cvf, [...path, ck], level + 1, childLabel)
+      for (let pi = 0; pi < 3; pi++) {
+        if (presentChild[pi].has(ck) && childKeys.some((ck2, j2) => j2 > j && presentChild[pi].has(ck2))) {
+          appendComma(child.lines[pi])
+        }
+        const base = lines[pi].length
+        for (const l of child.lines[pi]) lines[pi].push(l)
+        for (const [k, rel] of child.keys[pi]) keys[pi].set(k, base + rel)
+      }
+    }
+
+    for (let pi = 0; pi < 3; pi++) {
+      lines[pi].push(kinds[pi] === 'absent' ? '' : pad.repeat(level) + (isArr ? ']' : '}'))
+    }
+    return { lines, keys }
+  }
+
+  const root = renderNode(a, b, f, [], 0, null)
+  return {
+    a: { text: root.lines[0].join('\n'), lines: root.keys[0] },
+    b: { text: root.lines[1].join('\n'), lines: root.keys[1] },
+    f: { text: root.lines[2].join('\n'), lines: root.keys[2] },
+  }
+}
