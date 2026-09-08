@@ -40,12 +40,22 @@ function wireSync() {
 }
 
 // ---- Editor line highlights (Git-diff palette) ----
+function pushSpan(out: Highlight[], start: number | undefined, end: number | undefined, className: string) {
+  if (start == null) return
+  const last = end ?? start
+  for (let l = start; l <= last; l++) out.push({ line: l, className })
+}
+
 const aHighlights = computed<Highlight[]>(() => {
   const out: Highlight[] = []
   for (const d of store.leaves) {
     if (d.kind === 'added') continue
-    const line = store.aMap.get(pathKey(d.path))
-    if (line) out.push({ line, className: d.kind === 'removed' ? 'diff-line-removed' : 'diff-line-changed' })
+    pushSpan(
+      out,
+      store.aMap.get(pathKey(d.path)),
+      store.aEnds.get(pathKey(d.path)),
+      d.kind === 'removed' ? 'diff-line-removed' : 'diff-line-changed',
+    )
   }
   return out
 })
@@ -54,18 +64,22 @@ const bHighlights = computed<Highlight[]>(() => {
   const out: Highlight[] = []
   for (const d of store.leaves) {
     if (d.kind === 'removed') continue
-    const line = store.bMap.get(pathKey(d.path))
-    if (line) out.push({ line, className: d.kind === 'added' ? 'diff-line-added' : 'diff-line-changed' })
+    pushSpan(
+      out,
+      store.bMap.get(pathKey(d.path)),
+      store.bEnds.get(pathKey(d.path)),
+      d.kind === 'added' ? 'diff-line-added' : 'diff-line-changed',
+    )
   }
   return out
 })
 const finalHighlights = computed<Highlight[]>(() => {
   const out: Highlight[] = []
   for (const d of store.leaves) {
-    const line = store.finalMap.get(pathKey(d.path))
-    if (!line) continue
+    const start = store.finalMap.get(pathKey(d.path))
+    if (start == null) continue
     const resolved = store.resolved.has(pathKey(d.path))
-    out.push({ line, className: resolved ? 'diff-line-resolved' : 'diff-line-changed' })
+    pushSpan(out, start, store.finalEnds.get(pathKey(d.path)), resolved ? 'diff-line-resolved' : 'diff-line-changed')
   }
   return out
 })

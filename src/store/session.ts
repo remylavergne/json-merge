@@ -93,6 +93,9 @@ export const useSessionStore = defineStore('session', () => {
   const aMap = shallowRef<Map<string, number>>(new Map())
   const bMap = shallowRef<Map<string, number>>(new Map())
   const finalMap = shallowRef<Map<string, number>>(new Map())
+  const aEnds = shallowRef<Map<string, number>>(new Map())
+  const bEnds = shallowRef<Map<string, number>>(new Map())
+  const finalEnds = shallowRef<Map<string, number>>(new Map())
   const finalValid = ref(true)
 
   const indent = ref<2 | 4>(2)
@@ -247,10 +250,13 @@ export const useSessionStore = defineStore('session', () => {
       const r = stringifyAligned(A, B, final.value, indent.value)
       aText.value = r.a.text
       aMap.value = r.a.lines
+      aEnds.value = r.a.ends
       bText.value = r.b.text
       bMap.value = r.b.lines
+      bEnds.value = r.b.ends
       finalText.value = r.f.text
       finalMap.value = r.f.lines
+      finalEnds.value = r.f.ends
       finalValid.value = true
       return
     }
@@ -258,22 +264,29 @@ export const useSessionStore = defineStore('session', () => {
       const s = stringifyWithIndex(A, indent.value)
       aText.value = s.text
       aMap.value = s.lines
+      aEnds.value = s.ends
     } else {
       aText.value = ''
       aMap.value = new Map()
+      aEnds.value = new Map()
     }
     if (B != null) {
       const s = stringifyWithIndex(B, indent.value)
       bText.value = s.text
       bMap.value = s.lines
+      bEnds.value = s.ends
     } else {
       bText.value = ''
       bMap.value = new Map()
+      bEnds.value = new Map()
     }
     const s =
-      final.value != null ? stringifyWithIndex(final.value, indent.value) : { text: '', lines: new Map<string, number>() }
+      final.value != null
+        ? stringifyWithIndex(final.value, indent.value)
+        : { text: '', lines: new Map<string, number>(), ends: new Map<string, number>() }
     finalText.value = s.text
     finalMap.value = s.lines
+    finalEnds.value = s.ends
     finalValid.value = true
   }
 
@@ -567,6 +580,9 @@ export const useSessionStore = defineStore('session', () => {
     aMap,
     bMap,
     finalMap,
+    aEnds,
+    bEnds,
+    finalEnds,
     finalValid,
     indent,
     filter,

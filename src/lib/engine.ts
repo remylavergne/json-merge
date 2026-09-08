@@ -204,12 +204,14 @@ function removeAtRec(node: JsonValue, path: JsonPath, i: number): JsonValue {
 export interface Stringified {
   text: string
   lines: Map<string, number> // pathKey -> 1-based line of the key/value
+  ends: Map<string, number> // pathKey -> 1-based line of the value's closing delimiter (== start line for scalars/empty containers)
 }
 
 /** Pretty-print JSON with configurable indent, while recording the line of every
  *  object key and array element (used to map diff paths to editor lines). */
 export function stringifyWithIndex(value: JsonValue, indentSpaces = 2): Stringified {
   const lines = new Map<string, number>()
+  const ends = new Map<string, number>()
   const parts: string[] = []
   let line = 1
   const pad = ' '.repeat(indentSpaces)
@@ -227,11 +229,13 @@ export function stringifyWithIndex(value: JsonValue, indentSpaces = 2): Stringif
   function write(v: JsonValue, path: JsonPath, level: number): void {
     if (v === null || typeof v !== 'object') {
       emit(JSON.stringify(v))
+      ends.set(pathKey(path), line)
       return
     }
     if (Array.isArray(v)) {
       if (v.length === 0) {
         emit('[]')
+        ends.set(pathKey(path), line)
         return
       }
       emit('[' + NL)
@@ -243,11 +247,13 @@ export function stringifyWithIndex(value: JsonValue, indentSpaces = 2): Stringif
         emit(NL)
       })
       emit(pad.repeat(level) + ']')
+      ends.set(pathKey(path), line)
       return
     }
     const keys = Object.keys(v)
     if (keys.length === 0) {
       emit('{}')
+      ends.set(pathKey(path), line)
       return
     }
     emit('{' + NL)
@@ -260,10 +266,11 @@ export function stringifyWithIndex(value: JsonValue, indentSpaces = 2): Stringif
       emit(NL)
     })
     emit(pad.repeat(level) + '}')
+    ends.set(pathKey(path), line)
   }
 
   write(value, [], 0)
-  return { text: parts.join(''), lines }
+  return { text: parts.join(''), lines, ends }
 }
 
 /** Count all object keys recursively (for statistics). */
@@ -359,6 +366,7 @@ export function previewValue(v: JsonValue | undefined): string {
 export interface AlignedDoc {
   text: string
   lines: Map<string, number> // pathKey -> 1-based line in the aligned text
+  ends: Map<string, number> // pathKey -> 1-based line of the value's closing delimiter in the aligned text
 }
 
 /** Render three sorted JSON documents (A, B, merged Final) as equal-height,
@@ -381,21 +389,24 @@ export function stringifyAligned(
     keyLabel: string | null,
     path: JsonPath,
     level: number,
-  ): { lines: string[]; keys: Map<string, number> } {
+  ): { lines: string[]; keys: Map<string, number>; ends: Map<string, number> } {
     const lines: string[] = []
     const keys = new Map<string, number>()
+    const ends = new Map<string, number>()
     const ind = pad.repeat(level)
     const prefix = keyLabel === null ? ind : ind + keyLabel
     keys.set(pathKey(path), 1)
 
     if (v === null || typeof v !== 'object') {
       lines.push(prefix + JSON.stringify(v))
-      return { lines, keys }
+      ends.set(pathKey(path), 1)
+      return { lines, keys, ends }
     }
     if (Array.isArray(v)) {
       if (v.length === 0) {
         lines.push(prefix + '[]')
-        return { lines, keys }
+        ends.set(pathKey(path), 1)
+        return { lines, keys, ends }
       }
       lines.push(prefix + '[')
       v.forEach((item, i) => {
@@ -404,15 +415,18 @@ export function stringifyAligned(
         const base = lines.length
         for (const l of child.lines) lines.push(l)
         for (const [k, rel] of child.keys) keys.set(k, base + rel)
+        for (const [k, rel] of child.ends) ends.set(k, base + rel)
         if (i < v.length - 1) lines[lines.length - 1] += ','
       })
       lines.push(pad.repeat(level) + ']')
-      return { lines, keys }
+      ends.set(pathKey(path), lines.length)
+      return { lines, keys, ends }
     }
     const ks = Object.keys(v)
     if (ks.length === 0) {
       lines.push(prefix + '{}')
-      return { lines, keys }
+      ends.set(pathKey(path), 1)
+      return { lines, keys, ends }
     }
     lines.push(prefix + '{')
     ks.forEach((k, idx) => {
@@ -421,10 +435,12 @@ export function stringifyAligned(
       const base = lines.length
       for (const l of child.lines) lines.push(l)
       for (const [kk, rel] of child.keys) keys.set(kk, base + rel)
+      for (const [kk, rel] of child.ends) ends.set(kk, base + rel)
       if (idx < ks.length - 1) lines[lines.length - 1] += ','
     })
     lines.push(pad.repeat(level) + '}')
-    return { lines, keys }
+    ends.set(pathKey(path), lines.length)
+    return { lines, keys, ends }
   }
 
   function appendComma(arr: string[]): void {
@@ -457,7 +473,7 @@ export function stringifyAligned(
     path: JsonPath,
     level: number,
     keyLabel: string | null,
-  ): { lines: string[][]; keys: Array<Map<string, number>> } {
+  ): { lines: string[][]; keys: Array<Map<string, number>>; ends: Array<Map<string, number>> } {
     const vals = [va, vb, vf]
     const kinds = vals.map((v) =>
       v === undefined ? 'absent' : Array.isArray(v) ? 'array' : isPlainObject(v) ? 'object' : 'scalar',
@@ -472,16 +488,20 @@ export function stringifyAligned(
     // value wholesale and pad to the tallest.
     if (!allSameComposite) {
       const rendered = vals.map((v, pi) =>
-        v === undefined ? { lines: [] as string[], keys: new Map<string, number>() } : renderMember(v, keyLabel, path, level),
+        v === undefined
+          ? { lines: [] as string[], keys: new Map<string, number>(), ends: new Map<string, number>() }
+          : renderMember(v, keyLabel, path, level),
       )
       const max = Math.max(0, ...rendered.map((r) => r.lines.length))
       const lines: string[][] = [[], [], []]
       const keys: Array<Map<string, number>> = [new Map(), new Map(), new Map()]
+      const ends: Array<Map<string, number>> = [new Map(), new Map(), new Map()]
       for (let pi = 0; pi < 3; pi++) {
         for (let i = 0; i < max; i++) lines[pi].push(i < rendered[pi].lines.length ? rendered[pi].lines[i] : '')
         for (const [k, rel] of rendered[pi].keys) keys[pi].set(k, rel)
+        for (const [k, rel] of rendered[pi].ends) ends[pi].set(k, rel)
       }
-      return { lines, keys }
+      return { lines, keys, ends }
     }
 
     // Same composite type in every present pane: interleave children.
@@ -490,6 +510,7 @@ export function stringifyAligned(
     const prefix = keyLabel === null ? ind : ind + keyLabel
     const lines: string[][] = [[], [], []]
     const keys: Array<Map<string, number>> = [new Map(), new Map(), new Map()]
+    const ends: Array<Map<string, number>> = [new Map(), new Map(), new Map()]
 
     for (let pi = 0; pi < 3; pi++) {
       lines[pi].push(kinds[pi] === 'absent' ? '' : prefix + (isArr ? '[' : '{'))
@@ -520,19 +541,20 @@ export function stringifyAligned(
         const base = lines[pi].length
         for (const l of child.lines[pi]) lines[pi].push(l)
         for (const [k, rel] of child.keys[pi]) keys[pi].set(k, base + rel)
+        for (const [k, rel] of child.ends[pi]) ends[pi].set(k, base + rel)
       }
     }
-
     for (let pi = 0; pi < 3; pi++) {
       lines[pi].push(kinds[pi] === 'absent' ? '' : pad.repeat(level) + (isArr ? ']' : '}'))
+      if (kinds[pi] !== 'absent') ends[pi].set(pathKey(path), lines[pi].length)
     }
-    return { lines, keys }
+    return { lines, keys, ends }
   }
 
   const root = renderNode(a, b, f, [], 0, null)
   return {
-    a: { text: root.lines[0].join('\n'), lines: root.keys[0] },
-    b: { text: root.lines[1].join('\n'), lines: root.keys[1] },
-    f: { text: root.lines[2].join('\n'), lines: root.keys[2] },
+    a: { text: root.lines[0].join('\n'), lines: root.keys[0], ends: root.ends[0] },
+    b: { text: root.lines[1].join('\n'), lines: root.keys[1], ends: root.ends[1] },
+    f: { text: root.lines[2].join('\n'), lines: root.keys[2], ends: root.ends[2] },
   }
 }
