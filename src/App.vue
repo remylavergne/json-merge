@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { CircleAlert, CheckCircle2, Info, CircleDot } from 'lucide-vue-next'
 import { useSessionStore } from './store/session'
 import { pathKey } from './lib/engine'
@@ -14,9 +14,9 @@ import EmptyState from './components/EmptyState.vue'
 
 const store = useSessionStore()
 
-const edA = ref<monaco.editor.IStandaloneCodeEditor | null>(null)
-const edB = ref<monaco.editor.IStandaloneCodeEditor | null>(null)
-const edF = ref<monaco.editor.IStandaloneCodeEditor | null>(null)
+const edA = shallowRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+const edB = shallowRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+const edF = shallowRef<monaco.editor.IStandaloneCodeEditor | null>(null)
 let syncGuard = false
 function wireSync() {
   const editors = [edA.value, edB.value, edF.value]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { onMounted, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { monaco } from '../lib/monaco'
 
 export interface Highlight {
@@ -28,7 +28,7 @@ const emit = defineEmits<{
   (e: 'ready', editor: monaco.editor.IStandaloneCodeEditor): void
 }>()
 
-const container = ref<HTMLElement | null>(null)
+const container = shallowRef<HTMLElement | null>(null)
 let activeDecoration: string[] = []
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let decorations: string[] = []
